@@ -10,7 +10,7 @@
 
 #include <inttypes.h>
 
-#define PULSE_TIMEOUT 150000L	// 100ms
+#define PULSE_TIMEOUT 12000L	// ~2m range
 #define DEFAULT_DELAY 10
 #define DEFAULT_PINGS 5
 class SR04 {

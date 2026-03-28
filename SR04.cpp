@@ -21,8 +21,15 @@ long SR04::Distance() {
     digitalWrite(_triggerPin, LOW);
     delayMicroseconds(2);
     _duration = pulseIn(_echoPin, HIGH, PULSE_TIMEOUT);
+    if (_duration == 0) {
+        // Force ECHO pin LOW to reset sensor state machine
+        pinMode(_echoPin, OUTPUT);
+        digitalWrite(_echoPin, LOW);
+        delay(5);
+        pinMode(_echoPin, INPUT);
+    }
     d = MicrosecondsToCentimeter(_duration);
-    delay(25);
+    delay(60);
     return d;
 }
 
