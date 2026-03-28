@@ -11,17 +11,23 @@ void setup() {
 
 void loop() {
   long distance = sr04.Distance();
+
   if (distance == 0) {
     Serial.println("Out of range");
+    digitalWrite(BUZZER_PIN, LOW);
+    delay(1000);
   } else {
     Serial.print("Distance: ");
     Serial.print(distance);
     Serial.println(" cm");
-  }
 
-  // Beep for 100ms every second
-  digitalWrite(BUZZER_PIN, HIGH);
-  delay(100);
-  digitalWrite(BUZZER_PIN, LOW);
-  delay(900);
+    // Closer = shorter interval. Range: 5cm (50ms) to 100cm (1000ms)
+    long interval = map(distance, 5, 100, 50, 1000);
+    interval = constrain(interval, 50, 1000);
+
+    digitalWrite(BUZZER_PIN, HIGH);
+    delay(30);
+    digitalWrite(BUZZER_PIN, LOW);
+    delay(interval);
+  }
 }
