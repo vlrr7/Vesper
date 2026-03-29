@@ -34,13 +34,15 @@
 
 // ─── Fall detection ─────────────────────────────────────────────────────────
 #define MPU_ADDR           0x68
-#define ACC_FULL_SCALE_16G 0x18
-#define FREEFALL_THRESHOLD 0.4
-#define IMPACT_THRESHOLD   3.0
-#define STILL_THRESHOLD    0.3
-#define STILL_DURATION_MS  1000
-#define COOLDOWN_MS        5000
-#define FALL_SAMPLE_MS     20   // ms — fall detection sample rate (~50Hz)
+#define ACC_FULL_SCALE_REG 0x08  // ±2g=0x00, ±4g=0x08, ±8g=0x10, ±16g=0x18
+#define ACC_LSB_PER_G      (16384 >> ((ACC_FULL_SCALE_REG >> 3) & 0x03)) // auto-derived from scale
+
+#define FREEFALL_THRESHOLD 0.6   // g — below this → freefall
+#define IMPACT_THRESHOLD   2.0   // g — above this → impact
+#define STILL_THRESHOLD    0.3   // g — within this of 1g → person is still
+#define STILL_DURATION_MS  1000  // ms — must be still this long before alert
+#define COOLDOWN_MS        5000  // ms — min time between alerts
+#define FALL_SAMPLE_MS     20    // ms — fall detection sample rate (~50Hz)
 
 enum FallState { WATCHING, FREEFALL_DETECTED, IMPACT_DETECTED };
 FallState fallState    = WATCHING;
@@ -88,9 +90,9 @@ float readAccMagnitude() {
   int16_t ay = (Wire.read() << 8) | Wire.read();
   int16_t az = (Wire.read() << 8) | Wire.read();
 
-  float gx = ax / 2048.0;
-  float gy = ay / 2048.0;
-  float gz = az / 2048.0;
+  float gx = ax / (float)ACC_LSB_PER_G;
+  float gy = ay / (float)ACC_LSB_PER_G;
+  float gz = az / (float)ACC_LSB_PER_G;
 
   return sqrt(gx * gx + gy * gy + gz * gz);
 }
@@ -127,7 +129,7 @@ void updateFallDetection() {
         fallState = IMPACT_DETECTED;
         impactTime = now;
         Serial.print("! Impact: "); Serial.print(mag, 2); Serial.println("g");
-      } else if (now - freefallTime > 500) {
+      } else if (now - freefallTime > 1000) {
         fallState = WATCHING;
       }
       break;
@@ -240,7 +242,7 @@ void setup() {
 
   I2CwriteByte(MPU_ADDR, 0x6B, 0x00);
   delay(100);
-  I2CwriteByte(MPU_ADDR, 28, ACC_FULL_SCALE_16G);
+  I2CwriteByte(MPU_ADDR, 28, ACC_FULL_SCALE_REG);
 
   pinMode(LED_BUILTIN, OUTPUT);
 
