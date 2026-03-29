@@ -99,6 +99,11 @@ float readAccMagnitude() {
 
 // ─── BLE alert ──────────────────────────────────────────────────────────────
 void sendFallAlert() {
+  for (int i = 0; i < NUM_SENSORS; i++) {
+    digitalWrite(sensors[i].buzzerPin, LOW);
+    sensors[i].buzzerState = false;
+  }
+
   Serial.println(">>>  CHUTE DETECTEE!  <<<");
   Serial1.println("FALL");
 
