@@ -217,8 +217,9 @@ void updateBuzzer(Sensor &s) {
     return;
   }
 
-  long interval = map(s.distance, DIST_NEAR_CM, DIST_FAR_CM, BEEP_NEAR_MS, BEEP_FAR_MS);
-  interval = constrain(interval, BEEP_NEAR_MS, BEEP_FAR_MS);
+  float t = (float)(s.distance - DIST_NEAR_CM) / (DIST_FAR_CM - DIST_NEAR_CM);
+  t = constrain(t, 0.0, 1.0);
+  long interval = BEEP_NEAR_MS + (long)((BEEP_FAR_MS - BEEP_NEAR_MS) * t * t);
 
   unsigned long now = millis();
   if (s.buzzerState && now - s.lastToggle >= BEEP_ON_MS) {
