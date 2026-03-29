@@ -1,7 +1,7 @@
 // ─── Pin assignments ────────────────────────────────────────────────────────
-#define S1_TRIG      9
-#define S1_ECHO      10
-#define S1_BUZZER    7
+#define S1_TRIG      44
+#define S1_ECHO      46
+#define S1_BUZZER    48
 
 #define S2_TRIG      22
 #define S2_ECHO      24
