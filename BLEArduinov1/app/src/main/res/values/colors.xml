@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="vesper_bg">#FF1a1a2e</color>
+    <color name="vesper_accent">#FFe94560</color>
+    <color name="vesper_status">#FF16c79a</color>
+    <color name="vesper_card">#FF0f3460</color>
+    <color name="vesper_purple">#FF533483</color>
+    <color name="black">#FF000000</color>
+    <color name="white">#FFFFFFFF</color>
+</resources>
