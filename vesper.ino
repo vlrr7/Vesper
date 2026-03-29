@@ -1,7 +1,7 @@
 #define TRIG_PIN     9
 #define ECHO_PIN     10
 #define BUZZER_PIN   7
-#define MAX_DURATION 50000  // µs, max echo time (~2m range)
+#define MAX_DURATION 96000  // µs, max echo time (~2m range)
 #define ECHO_TIMEOUT 2000   // ms, wait for echo before giving up
 
 long ping() {
