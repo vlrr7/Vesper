@@ -1,3 +1,16 @@
+// =============================================
+// Vesper — Obstacle Detection + Fall Alert BLE
+// Arduino Mega 2560 + HC-SR04 x2 + MPU-9250 + HM-10
+// =============================================
+//
+// Câblage HM-10:
+//   HM-10 TX  → Mega pin 19 (RX1)
+//   HM-10 RX  → Mega pin 18 (TX1) via diviseur de tension
+//   HM-10 VCC → 3.3V
+//   HM-10 GND → GND
+
+#include <Wire.h>
+
 // ─── Pin assignments ────────────────────────────────────────────────────────
 #define S1_TRIG      44
 #define S1_ECHO      46
@@ -19,7 +32,24 @@
 #define DIST_NEAR_CM    5    // cm — distance mapped to BEEP_NEAR_MS
 #define DIST_FAR_CM     100  // cm — distance mapped to BEEP_FAR_MS
 
-// ─── Sensor state ───────────────────────────────────────────────────────────
+// ─── Fall detection ─────────────────────────────────────────────────────────
+#define MPU_ADDR           0x68
+#define ACC_FULL_SCALE_16G 0x18
+
+#define FREEFALL_THRESHOLD 0.4
+#define IMPACT_THRESHOLD   3.0
+#define STILL_THRESHOLD    0.3
+#define STILL_DURATION_MS  1000
+#define COOLDOWN_MS        5000
+
+enum FallState { WATCHING, FREEFALL_DETECTED, IMPACT_DETECTED };
+
+FallState fallState = WATCHING;
+unsigned long freefallTime  = 0;
+unsigned long impactTime    = 0;
+unsigned long lastAlertTime = 0;
+
+// ─── Ultrasonic sensor state ─────────────────────────────────────────────────
 struct Sensor {
   int trigPin, echoPin, buzzerPin;
   long distance;
@@ -33,7 +63,99 @@ Sensor sensors[] = {
 };
 const int NUM_SENSORS = sizeof(sensors) / sizeof(sensors[0]);
 
-// ─── Functions ──────────────────────────────────────────────────────────────
+// ─── I2C helper ─────────────────────────────────────────────────────────────
+void I2CwriteByte(uint8_t addr, uint8_t reg, uint8_t data) {
+  Wire.beginTransmission(addr);
+  Wire.write(reg);
+  Wire.write(data);
+  Wire.endTransmission();
+}
+
+// ─── Accelerometer ──────────────────────────────────────────────────────────
+float readAccMagnitude() {
+  Wire.beginTransmission(MPU_ADDR);
+  Wire.write(0x3B);
+  Wire.endTransmission(false);
+  Wire.requestFrom((uint8_t)MPU_ADDR, (uint8_t)6);
+
+  int16_t ax = (Wire.read() << 8) | Wire.read();
+  int16_t ay = (Wire.read() << 8) | Wire.read();
+  int16_t az = (Wire.read() << 8) | Wire.read();
+
+  float gx = ax / 2048.0;
+  float gy = ay / 2048.0;
+  float gz = az / 2048.0;
+
+  return sqrt(gx * gx + gy * gy + gz * gz);
+}
+
+// ─── BLE alert ──────────────────────────────────────────────────────────────
+void sendFallAlert() {
+  Serial.println(">>>  CHUTE DETECTEE!  <<<");
+  Serial1.println("FALL");
+
+  for (int i = 0; i < 10; i++) {
+    digitalWrite(LED_BUILTIN, HIGH);
+    delay(100);
+    digitalWrite(LED_BUILTIN, LOW);
+    delay(100);
+  }
+}
+
+// ─── Fall detection state machine ───────────────────────────────────────────
+void updateFallDetection() {
+  float mag = readAccMagnitude();
+  unsigned long now = millis();
+
+  switch (fallState) {
+    case WATCHING:
+      if (mag < FREEFALL_THRESHOLD) {
+        fallState = FREEFALL_DETECTED;
+        freefallTime = now;
+        Serial.print("! Chute libre: "); Serial.print(mag, 2); Serial.println("g");
+      }
+      break;
+
+    case FREEFALL_DETECTED:
+      if (mag > IMPACT_THRESHOLD) {
+        fallState = IMPACT_DETECTED;
+        impactTime = now;
+        Serial.print("! Impact: "); Serial.print(mag, 2); Serial.println("g");
+      } else if (now - freefallTime > 500) {
+        fallState = WATCHING;
+      }
+      break;
+
+    case IMPACT_DETECTED:
+      if (abs(mag - 1.0) < STILL_THRESHOLD) {
+        if (now - impactTime > STILL_DURATION_MS) {
+          if (now - lastAlertTime > COOLDOWN_MS) {
+            sendFallAlert();
+            lastAlertTime = now;
+          }
+          fallState = WATCHING;
+        }
+      } else if (now - impactTime > 3000) {
+        Serial.println("  -> Fausse alerte");
+        fallState = WATCHING;
+      }
+      break;
+  }
+
+  if (Serial1.available()) {
+    String cmd = Serial1.readStringUntil('\n');
+    cmd.trim();
+    if (cmd == "PING") {
+      Serial1.println("PONG");
+      Serial.println("BLE: PING recu, PONG envoye");
+    } else if (cmd == "STATUS") {
+      Serial1.println("OK");
+      Serial.println("BLE: STATUS demande");
+    }
+  }
+}
+
+// ─── Ultrasonic ping ─────────────────────────────────────────────────────────
 long ping(Sensor &s) {
   digitalWrite(s.trigPin, LOW);
   delayMicroseconds(2);
@@ -83,21 +205,40 @@ void printDistance(int index, long distance) {
   Serial.println(distance == 0 ? "Out of range" : String(distance) + " cm");
 }
 
-// ─── Setup / Loop ───────────────────────────────────────────────────────────
+// ─── Setup / Loop ────────────────────────────────────────────────────────────
 void setup() {
-  Serial.begin(9600);
+  Serial.begin(115200);
+  Serial1.begin(9600);
+  Wire.begin();
+
+  // MPU-9250 init
+  I2CwriteByte(MPU_ADDR, 0x6B, 0x00); // wake up
+  delay(100);
+  I2CwriteByte(MPU_ADDR, 28, ACC_FULL_SCALE_16G); // ±16g
+
+  pinMode(LED_BUILTIN, OUTPUT);
+
+  // Ultrasonic sensors init
   for (int i = 0; i < NUM_SENSORS; i++) {
     pinMode(sensors[i].trigPin, OUTPUT);
     pinMode(sensors[i].echoPin, INPUT);
     pinMode(sensors[i].buzzerPin, OUTPUT);
     digitalWrite(sensors[i].trigPin, LOW);
   }
+
+  Serial.println("=== Vesper ===");
+  Serial1.println("VESPER_READY");
+  delay(1000);
 }
 
 void loop() {
+  updateFallDetection();
+
   for (int i = 0; i < NUM_SENSORS; i++) {
     sensors[i].distance = ping(sensors[i]);
     printDistance(i, sensors[i].distance);
     updateBuzzer(sensors[i]);
   }
+
+  delay(20);
 }
